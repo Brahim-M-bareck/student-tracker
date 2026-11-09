@@ -1,6 +1,7 @@
 package esp.irt.studenttracker.rest;
 
 import esp.irt.studenttracker.model.Student;
+import jakarta.annotation.PostConstruct;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,21 @@ import java.util.List;
 @RequestMapping("/api")
 public class StudentRestController {
 
+    /** Liste chargée une seule fois au démarrage du contrôleur. */
+    private List<Student> theStudents;
+
+    /**
+     * Initialise la liste après l'injection des dépendances.
+     * La méthode n'est appelée qu'une fois car le contrôleur est un singleton.
+     */
+    @PostConstruct
+    public void loadData() {
+        theStudents = new ArrayList<>();
+        theStudents.add(new Student("Poornima", "Patel"));
+        theStudents.add(new Student("Mario", "Rossi"));
+        theStudents.add(new Student("Mary", "Smith"));
+    }
+
     /**
      * Premier endpoint de test.
      *
@@ -26,19 +42,12 @@ public class StudentRestController {
     }
 
     /**
-     * Retourne la liste des étudiants.
-     *
-     * <p>Version volontairement naïve de l'exercice 5.2 : la liste est recréée
-     * à chaque appel. C'est une mauvaise pratique expliquée dans REPONSES.md.</p>
+     * Retourne la liste des étudiants chargée au démarrage.
      *
      * @return les étudiants
      */
     @GetMapping("/students")
     public List<Student> getStudents() {
-        List<Student> students = new ArrayList<>();
-        students.add(new Student("Poornima", "Patel"));
-        students.add(new Student("Mario", "Rossi"));
-        students.add(new Student("Mary", "Smith"));
-        return students;
+        return theStudents;
     }
 }
