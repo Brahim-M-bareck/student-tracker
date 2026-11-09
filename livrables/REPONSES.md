@@ -308,7 +308,7 @@ Avec une exception métier et un handler global, la réponse devient explicite :
 HTTP/1.1 404
 Content-Type: application/json
 
-{"status":404,"message":"Student id not found - 999","timeStamp":1794261574093}
+{"status":404,"message":"Student id not found - 999","timeStamp":1794261845175}
 ```
 
 Le client sait immédiatement que la ressource est absente, peut afficher un message, et le
