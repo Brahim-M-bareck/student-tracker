@@ -53,6 +53,20 @@ Pour un build complet :
 mvn clean test
 ```
 
+## Bonus
+
+La section 9 du TP est implémentée dans une branche séparée, sans modifier `master` :
+
+```bash
+git checkout bonus-section9
+mvn test
+git checkout master
+```
+
+Elle contient `@ResponseStatus` sur l'exception, un champ `path` dans la réponse d'erreur et la
+validation Bean Validation (`@NotBlank`, `@Valid`, `MethodArgumentNotValidException`). Voir
+`BONUS.md` dans cette branche.
+
 ## Structure
 
 ```text
