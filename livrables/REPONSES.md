@@ -1,4 +1,4 @@
-# Réponses — TP 04 : API REST avec Spring Boot
+# Réponses — TP 04 : API REST & gestion des exceptions
 
 Projet : `student-tracker` — package `esp.irt.studenttracker` — Java 25 — Spring Boot 4.0.9.
 
@@ -9,7 +9,7 @@ automatisés sont dans `src/test/java/esp/irt/studenttracker/rest/StudentRestCon
 
 | Méthode | URL | Réponse attendue | Statut |
 |---|---|---|---|
-| GET | `/api/hello` | `Hello World!` | 200 |
+| GET | `/api/hello` | `Hello World` | 200 |
 | GET | `/api/students` | liste des 3 étudiants | 200 |
 | GET | `/api/students/{studentId}` | l'étudiant à l'index demandé | 200 |
 | GET | `/api/students/999` | erreur JSON `Student id not found - 999` | 404 |
@@ -17,37 +17,81 @@ automatisés sont dans `src/test/java/esp/irt/studenttracker/rest/StudentRestCon
 
 ---
 
-## Question de l'exercice 5.2 — Pourquoi recréer la liste à chaque appel est une mauvaise pratique
+## 1. Différence entre `@Controller` et `@RestController`. Que fait concrètement `@ResponseBody` ?
 
-Version naïve :
+`@Controller` est le stéréotype Spring MVC historique. Par défaut, la valeur de retour d'une
+méthode est interprétée comme un **nom de vue** (JSP, Thymeleaf, etc.) :
 
 ```java
-@GetMapping("/students")
-public List<Student> getStudents() {
-    List<Student> students = new ArrayList<>();
-    students.add(new Student("Poornima", "Patel"));
-    students.add(new Student("Mario", "Rossi"));
-    students.add(new Student("Mary", "Smith"));
-    return students;
+@Controller
+public class PageController {
+    @GetMapping("/page")
+    public String page() {
+        return "students"; // → students.html ou students.jsp
+    }
 }
 ```
 
-Cette version « fonctionne » pour un simple GET, mais elle est mauvaise pour plusieurs raisons :
+`@ResponseBody` indique à Spring que la valeur de retour doit être écrite **directement dans le
+corps de la réponse HTTP**, et non interprétée comme une vue. Pour un objet Java, Spring utilise
+un `HttpMessageConverter` (Jackson) pour le sérialiser en JSON :
 
-1. **Aucun état persistant.** Chaque requête repart de zéro. Si un futur endpoint ajoute,
-   modifie ou supprime un étudiant, la modification est perdue à la requête suivante. Une API
-   REST doit exposer une ressource dont l'état est stable, pas une vue recalculée à chaque appel.
-2. **Aucune source de vérité unique.** Les données sont codées en dur dans le contrôleur. Si un
-   autre endpoint a besoin de la même liste, il la duplique : les deux copies peuvent diverger.
-3. **Coût inutile.** On alloue une nouvelle `ArrayList` et de nouveaux objets à chaque requête,
-   ce qui augmente la pression sur le garbage collector. Pour 3 étudiants c'est négligeable,
-   mais le réflexe est mauvais et ne passe pas à l'échelle.
-4. **Mauvaise séparation des responsabilités.** Le contrôleur doit orchestrer HTTP, pas stocker
-   les données. La liste devrait venir d'un service, d'un repository ou d'une base de données.
-5. **Faux sentiment de simplicité.** Le code paraît plus court, mais il ne prépare pas du tout
-   l'ajout d'un `POST`, d'un `PUT` ou d'un `DELETE`.
+```java
+@Controller
+public class StudentController {
+    @GetMapping("/api/students/2")
+    @ResponseBody
+    public Student getStudent() {
+        return new Student("Mary", "Smith");
+    }
+}
+```
 
-Version corrigée avec `@PostConstruct` (contrôleur singleton, liste chargée une seule fois) :
+`@RestController` est une **méta-annotation** qui combine `@Controller` et `@ResponseBody` :
+
+```java
+@RestController
+@RequestMapping("/api")
+public class StudentRestController { ... }
+```
+
+Avec `@RestController`, chaque méthode est donc automatiquement sérialisée dans le corps de la
+réponse. C'est le choix naturel pour une API REST, alors que `@Controller` reste utile pour une
+application qui rend des pages HTML.
+
+---
+
+## 2. Qu'est-ce qu'un verbe HTTP idempotent ? Exemple idempotent et exemple non idempotent.
+
+Un verbe HTTP est **idempotent** si appeler la même requête plusieurs fois produit le **même
+état final** sur le serveur qu'un seul appel. L'idempotence concerne l'effet sur la ressource,
+pas nécessairement le code de réponse.
+
+| Verbe | Idempotent ? | Exemple |
+|---|---|---|
+| `GET` | Oui | `GET /api/students/2` ne modifie rien ; on peut le répéter sans effet de bord. |
+| `PUT` | Oui | `PUT /api/students/2` avec le même corps remplace l'étudiant par les mêmes valeurs ; le résultat final est identique. |
+| `DELETE` | Oui | `DELETE /api/students/2` supprime l'étudiant ; le refaire ne recrée rien (la ressource reste absente). |
+| `POST` | Non | `POST /api/students` crée un **nouvel** étudiant à chaque appel : deux appels créent deux ressources. |
+| `PATCH` | Généralement non | Un `PATCH` qui fait `solde = solde + 10` n'est pas idempotent ; un `PATCH` qui remplace un champ par une valeur fixe peut l'être. |
+
+Exemple non idempotent concret :
+
+```http
+POST /api/students
+{"firstName":"Ada","lastName":"Lovelace"}
+```
+
+Appelé deux fois, ce `POST` crée deux étudiants Ada Lovelace. C'est pour cela qu'on ne doit pas
+utiliser `POST` pour une opération que l'on veut pouvoir rejouer sans risque.
+
+---
+
+## 3. Pourquoi initialiser les données avec `@PostConstruct` plutôt que dans `getStudents()` ? Quel est le coût de la mauvaise version ?
+
+`@PostConstruct` (package `jakarta.annotation`) est appelée **une seule fois**, après la
+construction du bean et l'injection de ses dépendances, avant que le contrôleur ne traite des
+requêtes. Comme le contrôleur est un singleton, la liste est construite une fois et partagée :
 
 ```java
 private List<Student> theStudents;
@@ -66,352 +110,249 @@ public List<Student> getStudents() {
 }
 ```
 
-`@PostConstruct` est appelé **une seule fois**, après l'injection des dépendances et avant que
-le bean ne serve les requêtes. Comme le contrôleur est un singleton, la même liste est partagée
-par tous les appels : les données sont cohérentes et on évite les allocations répétées.
-
-Nuance importante : garder une liste mutable dans un contrôleur reste une solution de
-démonstration. Dans une vraie application, le contrôleur est **sans état** et délègue à un
-service / repository / base de données. Si plusieurs threads modifient la liste, il faut aussi
-gérer la concurrence (`CopyOnWriteArrayList`, synchronisation, ou mieux : la base de données).
-
----
-
-## 1. Qu'est-ce qu'une API REST ?
-
-REST (*Representational State Transfer*) est un **style d'architecture** défini par Roy
-Fielding, pas un protocole ni un format de données. Une API REST expose des **ressources**
-identifiées par des URI et manipule leur **représentation** (souvent du JSON) avec les verbes
-HTTP.
-
-Principes appliqués dans ce TP :
-
-- **Ressource** : `/api/students` représente la collection des étudiants ;
-  `/api/students/2` représente un étudiant précis.
-- **Verbe HTTP** : `GET` pour lire ; on ajouterait `POST` pour créer, `PUT`/`PATCH` pour
-  modifier, `DELETE` pour supprimer.
-- **Sans état côté serveur** : chaque requête contient tout ce qu'il faut pour être traitée ;
-  le serveur ne conserve pas de session client entre deux appels.
-- **Représentation** : le serveur renvoie du JSON, le client peut demander un autre format via
-  l'en-tête `Accept`.
-- **Interface uniforme** : mêmes conventions d'URI, de méthodes et de codes HTTP pour toutes
-  les ressources.
-
-REST n'impose pas JSON : on pourrait renvoyer du XML. Spring MVC choisit le format via la
-négociation de contenu. Une API REST n'est pas synonyme de SOAP : SOAP est un protocole fondé
-sur XML avec un contrat WSDL, alors que REST s'appuie sur HTTP et ses ressources.
-
----
-
-## 2. Quelle est la différence entre `@Controller` et `@RestController` ?
-
-`@Controller` est le stéréotype Spring MVC historique. Par défaut, la valeur de retour d'une
-méthode est interprétée comme un **nom de vue** (JSP, Thymeleaf, etc.) :
+La mauvaise version construit la liste **dans la méthode** :
 
 ```java
-@Controller
-public class PageController {
-    @GetMapping("/page")
-    public String page() {
-        return "students"; // → students.html ou students.jsp
-    }
+@GetMapping("/students")
+public List<Student> getStudents() {
+    List<Student> theStudents = new ArrayList<>();
+    theStudents.add(new Student("Poornima", "Patel"));
+    theStudents.add(new Student("Mario", "Rossi"));
+    theStudents.add(new Student("Mary", "Smith"));
+    return theStudents;
 }
 ```
 
-Pour renvoyer directement des données, il faut ajouter `@ResponseBody` sur la méthode (ou sur la
-classe).
+Coût et inconvénients :
 
-`@RestController` est une **méta-annotation** qui combine `@Controller` et `@ResponseBody` :
+- **allocations répétées** : une nouvelle `ArrayList` et trois nouveaux `Student` à chaque
+  requête, donc pression sur le garbage collector et latence inutile ;
+- **aucun état persistant** : si un `POST`, `PUT` ou `DELETE` est ajouté plus tard, la
+  modification est perdue à l'appel suivant ;
+- **source de vérité dispersée** : les données sont codées en dur dans le contrôleur ; un autre
+  endpoint qui a besoin de la même liste doit la dupliquer ;
+- **incohérence possible** : deux endpoints peuvent renvoyer des listes différentes si les
+  données changent ;
+- **mauvaise séparation des responsabilités** : le contrôleur doit gérer HTTP, pas stocker les
+  données. Une vraie application délègue à un service / repository / base de données.
+
+Pour trois étudiants, le coût est négligeable, mais le réflexe ne passe pas à l'échelle : avec
+`N` étudiants et `R` requêtes, la mauvaise version fait `O(N × R)` allocations au lieu de `O(N)`.
+
+---
+
+## 4. Rôle de Jackson. Que change Spring Boot 4 par rapport à Spring Boot 2/3 ?
+
+Jackson est la bibliothèque qui assure la **(dé)sérialisation JSON ⇄ objets Java** :
+
+- objet Java → JSON lors de l'écriture de la réponse (`@RestController`, `ResponseEntity`) ;
+- JSON → objet Java lors de la lecture du corps d'une requête (`@RequestBody`).
+
+Spring Boot configure automatiquement un `ObjectMapper` et les `HttpMessageConverter` adaptés.
+Dans ce TP, `List<Student>` est convertie en tableau JSON sans code manuel :
+
+```json
+[{"firstName":"Poornima","lastName":"Patel"}, ...]
+```
+
+Spring Boot 4 utilise **Jackson 3** au lieu de Jackson 2 :
+
+| Élément | Spring Boot 2/3 (Jackson 2) | Spring Boot 4 (Jackson 3) |
+|---|---|---|
+| Package du databind | `com.fasterxml.jackson.databind.*` | `tools.jackson.databind.*` |
+| Package du core | `com.fasterxml.jackson.core.*` | `tools.jackson.core.*` |
+| `ObjectMapper` | `com.fasterxml.jackson.databind.ObjectMapper` | `tools.jackson.databind.ObjectMapper` |
+| Annotations | `com.fasterxml.jackson.annotation.*` | `com.fasterxml.jackson.annotation.*` (conservées) |
+| Dépendance | starter web | starter web (Jackson 3 fourni) |
+
+Le code du TP n'importe aucune classe Jackson : il se contente de retourner des POJO, et Spring
+Boot fait la sérialisation. Si l'on avait besoin de personnaliser le JSON, on utiliserait
+`tools.jackson.databind.ObjectMapper` ou les annotations `@JsonProperty`, `@JsonIgnore`, etc.
+
+---
+
+## 5. À quoi sert `ResponseEntity<T>` par rapport à un simple retour d'objet ? Trois choses qu'il permet de contrôler.
+
+Un simple retour d'objet laisse Spring décider du statut (généralement **200 OK**) et des
+en-têtes :
 
 ```java
-@RestController
-@RequestMapping("/api")
-public class StudentRestController {
-    @GetMapping("/hello")
-    public String sayHello() {
-        return "Hello World!"; // → corps de la réponse, pas une vue
-    }
+@GetMapping("/students/{id}")
+public Student getStudent(@PathVariable int id) {
+    return theStudents.get(id); // 200 + corps JSON, pas de contrôle du statut
 }
 ```
 
-Avec `@RestController`, chaque valeur de retour est écrite dans le corps de la réponse HTTP.
-Pour un objet Java, Spring le sérialise en JSON grâce à Jackson. C'est pour cela qu'un
-contrôleur d'API utilise `@RestController` et non `@Controller`.
+`ResponseEntity<T>` est un wrapper qui permet de contrôler **trois choses** :
 
----
-
-## 3. À quoi servent `@RequestMapping` et `@GetMapping` ? Comment Spring choisit-il la méthode ?
-
-`@RequestMapping` associe une URL (et éventuellement une méthode HTTP, des paramètres ou des
-en-têtes) à une classe ou une méthode de contrôleur. Placé sur la classe, il définit un
-**préfixe commun** :
-
-```java
-@RestController
-@RequestMapping("/api")
-public class StudentRestController { ... }
-```
-
-`@GetMapping` est un raccourci de `@RequestMapping(method = RequestMethod.GET)`. Il existe les
-équivalents `@PostMapping`, `@PutMapping`, `@PatchMapping` et `@DeleteMapping`.
-
-```java
-@GetMapping("/students/{studentId}")
-public Student getStudent(@PathVariable int studentId) { ... }
-```
-
-Au démarrage, Spring scanne les contrôleurs et construit une table de routage
-(`RequestMappingHandlerMapping`) : pour chaque combinaison **URL + méthode HTTP + paramètres +
-en-têtes**, il retient la méthode Java à appeler. À chaque requête, le `DispatcherServlet`
-consulte cette table, appelle la méthode choisie, puis sérialise le résultat.
-
-Si l'URL existe mais pas avec le bon verbe HTTP, Spring renvoie généralement **405 Method Not
-Allowed** ; si aucune URL ne correspond, **404 Not Found**.
-
----
-
-## 4. Comment Spring convertit-il un objet Java en JSON ?
-
-Spring Boot configure automatiquement un `HttpMessageConverter` capable de lire et d'écrire du
-JSON. Avec Spring Boot 4, c'est **Jackson 3** (`tools.jackson.*`) qui est utilisé par défaut.
-
-Le mécanisme est le suivant :
-
-1. la méthode du contrôleur retourne un `Student` ou une `List<Student>` ;
-2. `@RestController` indique que la valeur est un corps de réponse ;
-3. Spring choisit un convertisseur compatible avec le type retourné et le type MIME demandé
-   (`Accept: application/json`) ;
-4. Jackson sérialise l'objet : chaque getter public devient une propriété JSON.
+1. **le corps** de la réponse (`T` : objet, liste, `StudentErrorResponse`, etc.) ;
+2. **le code HTTP** (`HttpStatus.NOT_FOUND`, `BAD_REQUEST`, `CREATED`, etc.) ;
+3. **les en-têtes HTTP** (`Location`, `Content-Type`, en-têtes personnalisés, etc.).
 
 Exemple :
 
 ```java
-public class Student {
-    private String firstName;
-    private String lastName;
+StudentErrorResponse error = new StudentErrorResponse();
+error.setStatus(HttpStatus.NOT_FOUND.value());
+error.setMessage("Student id not found - 999");
+error.setTimeStamp(System.currentTimeMillis());
 
-    public String getFirstName() { return firstName; }
-    public String getLastName() { return lastName; }
-}
+return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
 ```
 
-produit :
+On peut aussi construire la réponse avec les builders :
 
-```json
-{"firstName":"Mary","lastName":"Smith"}
+```java
+return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+return ResponseEntity.ok(student);
+return ResponseEntity.created(location).body(student);
 ```
 
-Pour la désérialisation (un futur `POST` avec un corps JSON), Jackson a besoin d'un
-constructeur sans argument et de setters, ou d'un constructeur annoté. C'est pourquoi le POJO
-du TP possède un constructeur vide, un constructeur complet et les getters/setters.
-
-Le format peut être négocié avec l'en-tête `Accept` ; si le client demande du XML et qu'aucun
-convertisseur XML n'est présent, Spring renvoie **406 Not Acceptable**.
+C'est indispensable pour une API REST : un `404`, un `400` ou un `201` ne peuvent pas être
+exprimés par un simple retour d'objet.
 
 ---
 
-## 5. À quoi sert `@PathVariable` ? Que se passe-t-il avec `/api/students/abc` ?
+## 6. Comment Spring choisit-il quel `@ExceptionHandler` invoquer lorsqu'une exception est levée ?
 
-`@PathVariable` extrait une variable présente dans le **chemin** de l'URL et l'injecte dans le
-paramètre de la méthode :
+Spring utilise `ExceptionHandlerExceptionResolver`. Pour une exception donnée, il cherche le
+handler dont le **type d'exception est le plus spécifique** :
+
+1. d'abord les méthodes `@ExceptionHandler` **locales** au contrôleur concerné ;
+2. ensuite les handlers des classes `@ControllerAdvice` applicables ;
+3. parmi les candidats, la correspondance la plus proche dans la hiérarchie l'emporte :
+   `StudentNotFoundException` est préféré à `RuntimeException`, qui est préféré à `Exception`.
+
+Exemple :
 
 ```java
-@GetMapping("/students/{studentId}")
-public Student getStudent(@PathVariable int studentId) {
-    if (studentId < 0 || studentId >= theStudents.size()) {
-        throw new StudentNotFoundException("Student id not found - " + studentId);
-    }
-    return theStudents.get(studentId);
-}
+@ExceptionHandler(StudentNotFoundException.class) // prioritaire pour cette exception
+public ResponseEntity<StudentErrorResponse> handleNotFound(StudentNotFoundException exc) { ... }
+
+@ExceptionHandler(Exception.class) // filet de sécurité pour tout le reste
+public ResponseEntity<StudentErrorResponse> handleOther(Exception exc) { ... }
 ```
 
-- `/api/students/2` → `studentId = 2` → renvoie Mary Smith.
-- `/api/students/999` → l'index est hors de la liste → `StudentNotFoundException` → **404**.
-- `/api/students/abc` → Spring tente de convertir `"abc"` en `int` ; la conversion échoue avec
-  `MethodArgumentTypeMismatchException` → notre handler global renvoie **400**.
-
-Ne pas confondre avec `@RequestParam`, qui lit un paramètre de requête :
-`/api/students?id=2` s'écrirait `@RequestParam int id`. `@PathVariable` fait partie de l'URI et
-identifie la ressource ; `@RequestParam` filtre ou optionnalise la requête.
-
-En production, on peut aussi valider l'identifiant avec `@Min(0)` et `@Validated`, ou utiliser
-un identifiant métier (email, UUID) plutôt qu'un index de liste.
+Si aucun handler ne correspond, Spring laisse remonter l'exception et applique les résolveurs
+suivants (`ResponseStatusExceptionResolver` pour `@ResponseStatus`, puis le résolveur par défaut
+qui produit une réponse 500). C'est pour cela qu'un handler `Exception.class` trop large peut
+intercepter des erreurs inattendues : il faut le garder comme **dernier recours**.
 
 ---
 
-## 6. À quoi sert `@PostConstruct` ? Pourquoi le contrôleur est-il un singleton ?
+## 7. Quel problème résout `@ControllerAdvice` par rapport à un `@ExceptionHandler` local ? Quand restreindre sa portée ?
 
-`@PostConstruct` (package `jakarta.annotation`) marque une méthode appelée **une seule fois**
-après la construction du bean et l'injection de ses dépendances, mais avant qu'il ne soit mis à
-disposition pour traiter des requêtes. C'est l'endroit idéal pour initialiser des données en
-mémoire dans ce TP.
-
-```java
-@PostConstruct
-public void loadData() {
-    theStudents = new ArrayList<>();
-    theStudents.add(new Student("Poornima", "Patel"));
-    theStudents.add(new Student("Mario", "Rossi"));
-    theStudents.add(new Student("Mary", "Smith"));
-}
-```
-
-Par défaut, un bean Spring est **singleton** : le conteneur crée **une seule instance** de
-`StudentRestController` pour toute l'application. Toutes les requêtes HTTP passent donc par le
-même objet, et la liste initialisée dans `@PostConstruct` est partagée.
-
-Conséquences :
-
-- la liste n'est pas recréée à chaque appel : moins d'allocations, données cohérentes ;
-- si la liste est modifiée par plusieurs requêtes simultanées, il faut penser à la
-  **thread-safety** (le contrôleur n'est pas magiquement synchronisé) ;
-- dans une application réelle, on évite l'état mutable dans le contrôleur : on délègue à un
-  service ou à un repository, et la base de données garantit la persistance et la concurrence.
-
-Cycle de vie simplifié d'un bean singleton :
-constructeur → injection des dépendances → `@PostConstruct` → utilisation → `@PreDestroy`.
-
----
-
-## 7. Pourquoi créer une `StudentNotFoundException` plutôt que retourner `null` ?
-
-Retourner `null` pour un étudiant absent est ambigu :
-
-```java
-// Mauvaise approche
-return theStudents.get(studentId); // null si absent
-```
-
-Avec `null`, Spring renvoie souvent **200 OK** avec un corps vide (ou `null`). Le client ne peut
-pas distinguer « étudiant inexistant » d'une réponse vide légitime, et il n'a aucun message
-utile. Cela mélange aussi la logique métier (« cet étudiant n'existe pas ») et la logique HTTP
-(« quel statut renvoyer ? »).
-
-Une exception métier dédiée rend l'intention explicite :
-
-```java
-public class StudentNotFoundException extends RuntimeException {
-    public StudentNotFoundException(String message) {
-        super(message);
-    }
-}
-```
-
-```java
-if (studentId < 0 || studentId >= theStudents.size()) {
-    throw new StudentNotFoundException("Student id not found - " + studentId);
-}
-```
-
-Le contrôleur n'a plus à décider du format d'erreur : il signale le problème, et le
-`@ControllerAdvice` le traduit en **404** avec un JSON structuré. Avantages :
-
-- statut HTTP correct et explicite ;
-- message et format d'erreur homogènes pour tous les endpoints ;
-- code métier testable indépendamment de HTTP ;
-- pas de `null` à propager et à vérifier partout.
-
-On choisit une exception **non vérifiée** (`RuntimeException`) pour ne pas polluer les
-signatures de méthodes et pour bénéficier du rollback automatique de Spring sur les transactions
-en cas d'erreur.
-
----
-
-## 8. `@ExceptionHandler` local ou `@ControllerAdvice` global ? Pourquoi le catch-all `Exception` → 400 est-il dangereux ?
-
-Un `@ExceptionHandler` placé dans le contrôleur ne gère que les exceptions levées par **ce
-contrôleur** :
+Un `@ExceptionHandler` local ne s'applique qu'au contrôleur dans lequel il est déclaré. Avec
+plusieurs contrôleurs, il faudrait dupliquer le même code dans chacun :
 
 ```java
 @RestController
 public class StudentRestController {
     @ExceptionHandler(StudentNotFoundException.class)
-    public ResponseEntity<StudentErrorResponse> handle(StudentNotFoundException exc) { ... }
+    public ResponseEntity<StudentErrorResponse> handle(...) { ... }
 }
 ```
 
-Si un deuxième contrôleur est ajouté, il faut dupliquer le handler. Le format d'erreur peut
-diverger.
-
-`@ControllerAdvice` centralise la gestion pour **tous les contrôleurs** :
+`@ControllerAdvice` est un **gestionnaire global** : Spring l'applique à tous les contrôleurs.
+On centralise le format d'erreur, on évite la duplication et on garantit une réponse homogène :
 
 ```java
 @ControllerAdvice
 public class StudentRestExceptionHandler {
-
     @ExceptionHandler(StudentNotFoundException.class)
-    public ResponseEntity<StudentErrorResponse> handleStudentNotFoundException(
-            StudentNotFoundException exc) {
-        StudentErrorResponse error = new StudentErrorResponse();
-        error.setStatus(HttpStatus.NOT_FOUND.value());
-        error.setMessage(exc.getMessage());
-        error.setTimeStamp(System.currentTimeMillis());
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
-    }
+    public ResponseEntity<StudentErrorResponse> handleNotFound(...) { ... }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<StudentErrorResponse> handleException(Exception exc) {
-        // Filet de sécurité du TP : renvoie 400
-        ...
-    }
+    public ResponseEntity<StudentErrorResponse> handleOther(...) { ... }
 }
 ```
 
-C'est l'état final de l'exercice 5.7 : le contrôleur ne contient plus aucun `@ExceptionHandler`.
-Un seul endroit définit le format `StudentErrorResponse` (`status`, `message`, `timeStamp`).
+C'est un *cross-cutting concern* : la gestion des erreurs ne pollue plus les contrôleurs. On
+peut aussi y ajouter `@InitBinder` ou `@ModelAttribute` pour des traitements communs.
 
-**Le catch-all `Exception` → 400 est dangereux en production.** Il attrape *toutes* les
-exceptions non prévues : `NullPointerException`, panne de base de données, bug de sérialisation,
-etc. Une vraie erreur **serveur** serait alors annoncée au client comme une erreur **client**
-(400), ce qui :
-
-- masque le bug et fausse le diagnostic ;
-- trompe le client, qui risque de corriger une requête pourtant valide ;
-- pollue les métriques et les alertes (on ne voit plus les 5xx) ;
-- peut exposer un message interne (`exc.getMessage()`) contenant des détails sensibles.
-
-Bonne pratique :
-
-- gérer précisément les exceptions attendues (`StudentNotFoundException` → 404,
-  `MethodArgumentTypeMismatchException` → 400, erreurs de validation → 400) ;
-- garder un handler générique `Exception` → **500**, avec un message neutre et un log complet
-  côté serveur ;
-- ne jamais renvoyer la stacktrace au client ;
-- envisager `ProblemDetail` (RFC 9457) ou `ResponseEntityExceptionHandler` pour un format
-  standard.
-
-Exemple plus sûr :
+On restreint sa portée quand plusieurs APIs ou modules ont des besoins différents :
 
 ```java
-@ExceptionHandler(MethodArgumentTypeMismatchException.class)
-public ResponseEntity<StudentErrorResponse> handleTypeMismatch(
-        MethodArgumentTypeMismatchException exc) {
-    StudentErrorResponse error = new StudentErrorResponse(
-            HttpStatus.BAD_REQUEST.value(),
-            "Valeur invalide pour le paramètre : " + exc.getName(),
-            System.currentTimeMillis());
-    return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
-}
+@ControllerAdvice(basePackages = "esp.irt.studenttracker.rest")
+// ou
+@ControllerAdvice(assignableTypes = StudentRestController.class)
+// ou
+@ControllerAdvice(annotations = RestController.class)
+```
 
-@ExceptionHandler(Exception.class)
-public ResponseEntity<StudentErrorResponse> handleUnexpected(Exception exc) {
-    log.error("Erreur inattendue", exc);
-    StudentErrorResponse error = new StudentErrorResponse(
-            HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            "Une erreur interne est survenue",
-            System.currentTimeMillis());
-    return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+Cela évite qu'un handler global attrape par erreur les exceptions d'un contrôleur HTML ou d'un
+autre module, et permet d'avoir des formats d'erreur distincts (API JSON vs pages web).
+
+---
+
+## 8. Pourquoi renvoyer un 404 avec un corps JSON structuré est-il préférable à laisser remonter une `IndexOutOfBoundsException` (500) ?
+
+Laisser remonter `theStudents.get(999)` produit une `IndexOutOfBoundsException`. Spring renvoie
+alors **500 Internal Server Error** avec, selon la configuration, une trace ou un message interne.
+Pour le consommateur de l'API, c'est problématique :
+
+- **sémantique incorrecte** : un 500 signifie « le serveur a un bug », alors que la ressource
+  demandée n'existe simplement pas. Le client risque de réessayer ou d'alerter inutilement ;
+- **contrat instable** : le corps est une page d'erreur ou une trace, pas un JSON documenté.
+  Le client ne peut pas parser `status`, `message` et `timeStamp` de façon fiable ;
+- **fuite d'information** : la trace peut exposer des noms de classes, des chemins, voire des
+  données internes ;
+- **expérience client dégradée** : le front ou l'application mobile ne peut pas afficher un
+  message clair (« étudiant introuvable ») ni proposer une action adaptée ;
+- **observabilité brouillée** : les vrais bugs serveur (500) sont noyés parmi les demandes
+  d'identifiants inexistants.
+
+Avec une exception métier et un handler global, la réponse devient explicite :
+
+```http
+HTTP/1.1 404
+Content-Type: application/json
+
+{"status":404,"message":"Student id not found - 999","timeStamp":1794261574093}
+```
+
+Le client sait immédiatement que la ressource est absente, peut afficher un message, et le
+serveur garde les 500 pour les véritables erreurs internes. C'est un contrat clair, stable et
+testable.
+
+---
+
+## Question complémentaire — Exercice 5.2 : pourquoi recréer la liste à chaque appel est une mauvaise pratique ?
+
+La version demandée à l'exercice 5.2 construit la liste **à l'intérieur de `getStudents()`** :
+
+```java
+@GetMapping("/students")
+public List<Student> getStudents() {
+    List<Student> theStudents = new ArrayList<>();
+    theStudents.add(new Student("Poornima", "Patel"));
+    theStudents.add(new Student("Mario", "Rossi"));
+    theStudents.add(new Student("Mary", "Smith"));
+    return theStudents;
 }
 ```
 
-Dans ce TP, le catch-all 400 est conservé car il permet de démontrer simplement la gestion de
-`/api/students/abc`. Il faudrait le remplacer par un handler 500 dans une application réelle.
+À chaque appel HTTP, une nouvelle liste et de nouveaux objets sont créés, puis oubliés. Cette
+version est une mauvaise pratique car :
+
+1. **elle ne conserve aucun état** : un ajout, une modification ou une suppression serait perdu
+   à l'appel suivant ;
+2. **elle n'a pas de source de vérité** : les données sont codées en dur dans le contrôleur ;
+3. **elle gaspille des ressources** : allocations et garbage collection à chaque requête ;
+4. **elle ne passe pas à l'échelle** : le coût augmente avec le nombre d'étudiants et de
+   requêtes ;
+5. **elle mélange les responsabilités** : le contrôleur ne devrait pas fabriquer les données.
+
+La correction consiste à charger la liste une seule fois avec `@PostConstruct`, puis à la
+retourner. Dans une application réelle, on va plus loin : le contrôleur appelle un service, qui
+appelle un repository, qui lit la base de données. Le contrôleur reste sans état et la base
+garantit la persistance et la concurrence.
 
 ---
 
 ## Preuves
 
-- `livrables/captures-curl.txt` : sorties complètes des 5 appels `curl`, avec en-têtes HTTP pour
-  les erreurs 404 et 400.
-- `mvn test` : 6 tests, 0 échec (5 tests MockMvc + le test de chargement du contexte).
+- `livrables/captures-curl.txt` : sorties complètes des 5 appels `curl`, avec en-têtes HTTP
+  pour les erreurs 404 et 400.
+- `mvn clean test` : 6 tests, 0 échec (5 tests MockMvc + le test de chargement du contexte).
 - `livrables/REPONSES.md` : ce document.

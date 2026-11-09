@@ -1,13 +1,13 @@
 # Captures curl — TP04 Student Tracker
 
-Date : 2026-11-09T21:59:34+00:00
+Date : 2026-11-09T22:04:05+00:00
 Application : Spring Boot 4.0.9 — Java 25 — http://localhost:8080
 
 ## 1. GET /api/hello
 
 $ curl http://localhost:8080/api/hello
 
-Hello World!
+Hello World
 
 ## 2. GET /api/students
 
@@ -28,9 +28,9 @@ $ curl -i http://localhost:8080/api/students/999
 HTTP/1.1 404 
 Content-Type: application/json
 Transfer-Encoding: chunked
-Date: Mon, 09 Nov 2026 21:59:34 GMT
+Date: Mon, 09 Nov 2026 22:04:05 GMT
 
-{"status":404,"message":"Student id not found - 999","timeStamp":1794261574093}
+{"status":404,"message":"Student id not found - 999","timeStamp":1794261845175}
 
 ## 5. GET /api/students/abc (erreur 400)
 
@@ -39,7 +39,7 @@ $ curl -i http://localhost:8080/api/students/abc
 HTTP/1.1 400 
 Content-Type: application/json
 Transfer-Encoding: chunked
-Date: Mon, 09 Nov 2026 21:59:34 GMT
+Date: Mon, 09 Nov 2026 22:04:05 GMT
 Connection: close
 
-{"status":400,"message":"Method parameter 'studentId': Failed to convert value of type 'java.lang.String' to required type 'int'; For input string: \"abc\"","timeStamp":1794261574108}
+{"status":400,"message":"Method parameter 'studentId': Failed to convert value of type 'java.lang.String' to required type 'int'; For input string: \"abc\"","timeStamp":1794261845187}
