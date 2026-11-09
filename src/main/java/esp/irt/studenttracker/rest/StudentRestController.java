@@ -3,6 +3,7 @@ package esp.irt.studenttracker.rest;
 import esp.irt.studenttracker.model.Student;
 import jakarta.annotation.PostConstruct;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -49,5 +50,16 @@ public class StudentRestController {
     @GetMapping("/students")
     public List<Student> getStudents() {
         return theStudents;
+    }
+
+    /**
+     * Retourne un étudiant à partir de son index dans la liste.
+     *
+     * @param studentId index de l'étudiant
+     * @return l'étudiant correspondant
+     */
+    @GetMapping("/students/{studentId}")
+    public Student getStudent(@PathVariable int studentId) {
+        return theStudents.get(studentId);
     }
 }
