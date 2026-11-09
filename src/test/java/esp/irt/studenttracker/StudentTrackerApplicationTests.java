@@ -1,4 +1,4 @@
-package esp.irt.student_tracker;
+package esp.irt.studenttracker;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
