@@ -2,7 +2,7 @@
 
 Projet : `student-tracker` — package `esp.irt.studenttracker` — Java 25 — Spring Boot 4.0.9.
 
-Les sorties réelles des appels HTTP sont dans `livrables/captures-curl.txt`. Les tests
+Les sorties réelles des appels HTTP sont dans `livrables/captures-curl.md`. Les tests
 automatisés sont dans `src/test/java/esp/irt/studenttracker/rest/StudentRestControllerTest.java`.
 
 ## Récapitulatif des endpoints
@@ -352,7 +352,7 @@ garantit la persistance et la concurrence.
 
 ## Preuves
 
-- `livrables/captures-curl.txt` : sorties complètes des 5 appels `curl`, avec en-têtes HTTP
+- `livrables/captures-curl.md` : sorties complètes des 5 appels `curl`, avec en-têtes HTTP
   pour les erreurs 404 et 400.
 - `mvn clean test` : 6 tests, 0 échec (5 tests MockMvc + le test de chargement du contexte).
 - `livrables/REPONSES.md` : ce document.

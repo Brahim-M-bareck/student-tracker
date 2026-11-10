@@ -34,7 +34,7 @@ curl -i http://localhost:8080/api/students/999   # 404
 curl -i http://localhost:8080/api/students/abc   # 400
 ```
 
-Les sorties réelles sont dans `livrables/captures-curl.txt`.
+Les sorties réelles sont dans `livrables/captures-curl.md`.
 
 ## Tests
 
@@ -84,7 +84,7 @@ src/test/java/esp/irt/studenttracker/
 └── rest/StudentRestControllerTest.java
 
 livrables/
-├── captures-curl.txt
+├── captures-curl.md
 └── REPONSES.md
 ```
 
